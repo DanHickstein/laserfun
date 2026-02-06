@@ -528,6 +528,67 @@ class Pulse:
         newpulse.aw = np.abs(newpulse.aw)
         return newpulse
 
+    def soliton_number(self, fiber):
+        """Calculate the soliton number for this pulse propagating in a fiber.
+
+        Parameters
+        ----------
+        fiber : Fiber
+            Fiber object containing the nonlinearity (gamma) and dispersion (D) 
+            information.
+
+        Returns
+        -------
+        soliton_num : float
+            The soliton number (unitless).
+        disp_length : float
+            The dispersion length in meters.
+        nonl_length : float
+            The nonlinear length in meters.
+
+        Notes
+        -----
+        This method extracts the pulse duration (FWHM), pulse energy, and center 
+        wavelength from the pulse object, and the nonlinearity (gamma) and 
+        dispersion (beta2) from the fiber object. 
+        
+        The dispersion is obtained using fiber.get_beta_expansion(), which works 
+        regardless of the fiber's dispersion format (GVD, D, or n).
+
+        The soliton number N is defined as the square root of the ratio of 
+        dispersion length to nonlinear length: N = sqrt(L_D / L_NL).
+
+        For a fundamental soliton, N = 1. Higher-order solitons have N > 1.
+
+        Examples
+        --------
+        >>> pulse = Pulse(fwhm_ps=0.1, center_wavelength_nm=1550, epp=1e-9)
+        >>> fiber = Fiber(gamma_W_m=0.001, dispersion_format='GVD', 
+        ...               dispersion=[0.02])
+        >>> N, L_D, L_NL = pulse.soliton_number(fiber)
+        """
+        from . import tools
+
+        # Extract pulse parameters
+        pulse_duration_ps = self.calc_width(level=0.5)  # FWHM
+        pulse_energy_pJ = self.epp * 1e12  # Convert J to pJ
+
+        # Extract fiber gamma (convert from 1/(W m) to 1/(W km))
+        gamma_W_km = fiber.get_gamma(z=0) * 1e3
+
+        # Get beta2 from fiber using the new get_beta_expansion method
+        betas = fiber.get_beta_expansion(pulse=self, orders=[2])
+        beta2_ps2_per_km = betas['beta2']
+
+        # Call the tools.soliton_number function
+        return tools.soliton_number(
+            gamma=gamma_W_km,
+            pulse_duration=pulse_duration_ps,
+            pulse_energy=pulse_energy_pJ,
+            beta2=beta2_ps2_per_km
+        )
+
+
     def plot_spectrogram(
         self,
         gate_type="xfrog",

@@ -200,6 +200,100 @@ class Fiber:
 
         return alpha
 
+    def get_beta_expansion(self, pulse=None, wavelength_nm=None, z=0, orders=[2, 3]):
+        """Get the beta expansion coefficients (beta2, beta3, etc.) at a wavelength.
+
+        This method calculates the Taylor expansion coefficients of the propagation
+        constant around a specified wavelength by taking numerical derivatives of
+        the B(ω) function returned by get_B().
+
+        Parameters
+        ----------
+        pulse : Pulse, optional
+            Pulse object to use for the frequency grid. If not provided, a temporary
+            pulse will be created at the specified wavelength.
+        wavelength_nm : float, optional
+            Wavelength at which to calculate the beta expansion in nm.
+            If None, uses the fiber's center wavelength.
+        z : float, optional
+            Position along the fiber in meters. Default is 0.
+        orders : list of int, optional
+            Which orders of beta to calculate (e.g., [2, 3] for beta2 and beta3).
+            Default is [2, 3].
+
+        Returns
+        -------
+        betas : dict
+            Dictionary with keys like 'beta2', 'beta3', etc., containing the
+            beta coefficients in units of ps^n/km.
+
+        Notes
+        -----
+        The beta expansion is defined as:
+        B(ω) = β₀ + β₁(ω - ω₀) + β₂/2!(ω - ω₀)² + β₃/3!(ω - ω₀)³ + ...
+
+        where βₙ = dⁿB/dωⁿ evaluated at ω₀.
+
+        This method works regardless of the fiber's dispersion format (GVD, D, or n)
+        because it uses the get_B() method which handles all formats.
+
+        Examples
+        --------
+        >>> fiber = Fiber(dispersion_format='GVD', dispersion=[0.02])
+        >>> betas = fiber.get_beta_expansion(wavelength_nm=1550)
+        >>> print(f"beta2 = {betas['beta2']:.3f} ps²/km")
+        """
+        # Determine wavelength
+        if wavelength_nm is None:
+            wavelength_nm = self.center_wavelength
+
+        # Create or use pulse for frequency grid
+        if pulse is None:
+            # Create a temporary pulse at the specified wavelength
+            # Import here to avoid circular dependency
+            from . import pulse as pulse_module
+            pulse = pulse_module.Pulse(
+                center_wavelength_nm=wavelength_nm,
+                time_window_ps=10.0,
+                npts=2**12
+            )
+
+        # Get B(ω) from the fiber
+        B = self.get_B(pulse, z=z)
+        w_THz = pulse.w_THz
+        dw = w_THz[1] - w_THz[0]  # THz
+
+        # Find the index closest to the target wavelength
+        target_freq_THz = c_nmps / wavelength_nm
+        center_idx = np.argmin(np.abs(pulse.f_THz - target_freq_THz))
+
+        # Calculate derivatives at the center frequency
+        betas = {}
+        B_current = B
+
+        for order in orders:
+            # Take derivative
+            dB = np.gradient(B_current, dw)
+            
+            # Get value at center
+            beta_THz_per_m = dB[center_idx]
+            
+            # Convert from THz^order/m to ps^order/km
+            # 1 THz = 2π × 10^12 rad/s
+            # So THz^n = (2π × 10^12)^n rad^n/s^n
+            # ps^n = (10^-12 s)^n
+            # km = 10^3 m
+            conversion = (2 * np.pi * 1e12)**order * (1e-12)**order * 1e3
+            beta_ps_per_km = beta_THz_per_m * conversion
+            
+            betas[f'beta{order}'] = beta_ps_per_km
+            
+            # Prepare for next derivative
+            B_current = dB
+
+        return betas
+
+
     def get_B(self, pulse, z=0):
         """Get the propagation constant (Beta) at the frequency grid of pulse.
 

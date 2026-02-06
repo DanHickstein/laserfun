@@ -317,7 +317,75 @@ class TreacyCompressor:
         pulse.aw = pulse.aw * np.exp(1j * phase)
         pulse.aw[~diffraction_mask] = 0.0
 
+def soliton_number(gamma, pulse_duration, pulse_energy, D=None, beta2=None, wavelength=1560):
+    """Calculate the soliton number, nonlinear length, and dispersion length.
 
+    Parameters
+    ----------
+    gamma : float
+        The nonlinearity of the fiber in units of 1/(W km).
+        Note the use of km units.
+    pulse_duration : float
+        Pulse duration (FWHM) in units of ps.
+    pulse_energy : float
+        Pulse energy in units of pJ.
+    D : float, optional
+        Dispersion parameter in units of ps/(nm km). 
+        Either D or beta2 must be provided, but not both.
+    beta2 : float, optional
+        Group velocity dispersion in units of ps²/km.
+        Either D or beta2 must be provided, but not both.
+    wavelength : float, optional
+        The wavelength in nm (needed to convert D into beta2). 
+        Default is 1560 nm. Only used if D is provided.
 
+    Returns
+    -------
+    soliton_num : float
+        The soliton number (unitless).
+    disp_length : float
+        The dispersion length in meters.
+    nonl_length : float
+        The nonlinear length in meters.
 
+    Notes
+    -----
+    The soliton number N is defined as the square root of the ratio of 
+    dispersion length to nonlinear length: N = sqrt(L_D / L_NL).
+    
+    For a fundamental soliton, N = 1. Higher-order solitons have N > 1.
+    
+    Examples
+    --------
+    Using D parameter:
+    >>> N, L_D, L_NL = soliton_number(gamma=10, pulse_duration=0.1, 
+    ...                                pulse_energy=100, D=20, wavelength=1550)
+    
+    Using beta2 parameter:
+    >>> N, L_D, L_NL = soliton_number(gamma=10, pulse_duration=0.1,
+    ...                                pulse_energy=100, beta2=0.025)
+    """
+    # Validate that exactly one of D or beta2 is provided
+    if D is None and beta2 is None:
+        raise ValueError("Either D or beta2 must be provided")
+    if D is not None and beta2 is not None:
+        raise ValueError("Cannot provide both D and beta2")
+    
+    # Convert D to beta2 if needed
+    if D is not None:
+        c = 3e5  # units of nm/ps
+        beta2 = D * wavelength**2 / (2 * np.pi * c)
+    
+    # beta2 is now in ps²/km, convert to ps²
+    beta2_ps2 = beta2 * 1e-3
 
+    T0 = pulse_duration / 1.76
+
+    P0 = pulse_energy / T0
+
+    disp_length = T0**2 / np.abs(beta2_ps2)
+    nonl_length = 1 / (gamma * P0) * 1e3
+
+    soliton_num = np.sqrt(disp_length / nonl_length)
+
+    return soliton_num, disp_length, nonl_length
